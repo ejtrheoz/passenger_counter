@@ -33,7 +33,9 @@ COPY app ./app
 
 ENV ASSETS_DIR=/app/assets \
     WORK_DIR=/data/work \
-    DEVICE=0
+    DEVICE=0 \
+    PORT=80
 
-EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Runpod load-balancing endpoints inject PORT (default 80) and probe /ping.
+EXPOSE 80
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]

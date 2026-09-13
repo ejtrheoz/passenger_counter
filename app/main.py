@@ -62,6 +62,11 @@ async def _process(video: UploadFile, run):
             shutil.rmtree(job_dir, ignore_errors=True)
 
 
+@app.get("/ping")
+def ping():
+    return {"status": "ok"}
+
+
 @app.get("/health")
 def health():
     checks = {

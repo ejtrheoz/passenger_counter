@@ -50,11 +50,11 @@ docker build -t passenger-counter .
 
 # GPU (нужны NVIDIA-драйвер и NVIDIA Container Toolkit:
 #   sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker)
-docker run -d --name passenger-counter --gpus all -p 8000:8000 \
+docker run -d --name passenger-counter --gpus all -p 8000:80 \
   -v "$PWD/assets:/app/assets:ro" passenger-counter
 
 # без GPU
-docker run -d --name passenger-counter -p 8000:8000 -e DEVICE=cpu \
+docker run -d --name passenger-counter -p 8000:80 -e DEVICE=cpu \
   -v "$PWD/assets:/app/assets:ro" passenger-counter
 
 docker logs -f passenger-counter
