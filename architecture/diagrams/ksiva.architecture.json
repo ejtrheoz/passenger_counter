@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Ksiva: детекция предъявлений документа",
+    "subtitle": "dataset -> train_ksiva_yolo -> detect_ksiva_video -> aggregate_ksiva",
+    "output": "ksiva.html",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "data-and-training", "label": "Данные и обучение", "focus": ["annotate", "dataset", "prepare", "train", "weights"], "note": "От разметки кадров до финальных весов YOLO." },
+      { "id": "inference", "label": "Инференс на видео", "focus": ["batch", "aggregate", "activity", "clips", "detect", "raw"], "note": "Активностная нарезка и детекция ksiva по клипам." },
+      { "id": "postprocess", "label": "Постобработка", "focus": ["raw", "assoc", "merge", "filter", "unique"], "note": "Трекинг детекций и фильтрация артефактов до уникальных предъявлений." }
+    ]
+  },
+  "components": [
+    { "id": "annotate", "type": "backend", "label": "annotate_ksiva_bboxes.py", "sublabel": "разметка кадров", "pos": [40, 60], "size": [210, 68] },
+    { "id": "dataset", "type": "database", "label": "bbox_annotations.json", "sublabel": "444 pos + 93 neg", "pos": [280, 60], "size": [200, 68] },
+    { "id": "prepare", "type": "backend", "label": "prepare_ksiva_yolo_dataset.py", "sublabel": "5-fold + full split", "pos": [510, 60], "size": [210, 68] },
+    { "id": "train", "type": "backend", "label": "train_ksiva_yolo_final.py", "sublabel": "yolo26l.pt, imgsz 512", "pos": [750, 60], "size": [200, 68] },
+    { "id": "weights", "type": "database", "label": "best.pt", "sublabel": "runs/ksiva_yolo11_final", "pos": [980, 60], "size": [190, 68] },
+
+    { "id": "batch", "type": "backend", "label": "run_aggregate_ksiva_videos.py", "sublabel": "цикл по видео", "pos": [40, 260], "size": [210, 68] },
+    { "id": "aggregate", "type": "backend", "label": "aggregate_ksiva.py", "sublabel": "оркестрация + постобработка", "pos": [280, 260], "size": [200, 68] },
+    { "id": "activity", "type": "backend", "label": "Детекция активности", "sublabel": "общий модуль с door_flow", "pos": [510, 260], "size": [210, 68] },
+    { "id": "clips", "type": "external", "label": "clips/segment_*.mp4", "pos": [750, 260], "size": [200, 68] },
+    { "id": "detect", "type": "backend", "label": "detect_ksiva_video.py", "sublabel": "conf 0.25, imgsz 512", "pos": [980, 260], "size": [190, 68] },
+
+    { "id": "aggall", "type": "database", "label": "aggregate.all.history.json", "pos": [40, 420], "size": [210, 68] },
+    { "id": "assoc", "type": "backend", "label": "_assign_tracks", "sublabel": "первичный трекинг", "pos": [510, 420], "size": [210, 68] },
+    { "id": "dedupf", "type": "backend", "label": "_prepare_detections", "sublabel": "дедуп в кадре", "pos": [750, 420], "size": [200, 68] },
+    { "id": "raw", "type": "database", "label": "detections_raw.csv.gz", "pos": [980, 420], "size": [190, 68] },
+
+    { "id": "rejected", "type": "database", "label": "ksiva_rejected_objects.csv", "pos": [40, 560], "size": [210, 68] },
+    { "id": "merge", "type": "backend", "label": "_merge_track_fragments", "sublabel": "2-й проход, IoU>=0.80", "pos": [510, 560], "size": [210, 68] },
+    { "id": "filter", "type": "backend", "label": "filter_detections", "sublabel": "static/top-border/edge", "pos": [750, 560], "size": [200, 68] },
+    { "id": "unique", "type": "database", "label": "ksiva_unique_objects.csv", "pos": [980, 560], "size": [190, 68] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Данные и обучение", "wraps": ["annotate", "dataset", "prepare", "train", "weights"] },
+    { "kind": "region", "label": "aggregate_ksiva.py: постобработка", "wraps": ["assoc", "dedupf", "merge", "filter"] }
+  ],
+  "connections": [
+    { "id": "annotate-dataset", "from": "annotate", "to": "dataset", "label": "bbox / no-object", "labelDy": -28 },
+    { "id": "dataset-prepare", "from": "dataset", "to": "prepare", "label": "фолды" },
+    { "id": "prepare-train", "from": "prepare", "to": "train", "label": "data.yaml", "labelDy": -28 },
+    { "id": "train-weights", "from": "train", "to": "weights", "label": "150 эпох", "labelDy": -28 },
+
+    { "id": "batch-aggregate", "from": "batch", "to": "aggregate", "label": "по видео", "labelDy": -21 },
+    { "id": "aggregate-activity", "from": "aggregate", "to": "activity", "label": "кадры" },
+    { "id": "activity-clips", "from": "activity", "to": "clips", "label": "интервалы", "labelDy": -28 },
+    { "id": "clips-detect", "from": "clips", "to": "detect", "label": "манифест", "labelDy": -28 },
+    { "id": "weights-detect", "from": "weights", "to": "detect", "label": "--weights", "fromSide": "bottom", "toSide": "top", "labelDy": -62 },
+    { "id": "detect-raw", "from": "detect", "to": "raw", "label": "frame,bbox,conf", "fromSide": "bottom", "toSide": "top", "labelDy": 24 },
+
+    { "id": "raw-dedupf", "from": "raw", "to": "dedupf", "fromSide": "left", "toSide": "right" },
+    { "id": "dedupf-assoc", "from": "dedupf", "to": "assoc" },
+    { "id": "assoc-merge", "from": "assoc", "to": "merge", "label": "фрагменты", "fromSide": "bottom", "toSide": "top", "labelDy": 30 },
+    { "id": "merge-filter", "from": "merge", "to": "filter", "label": "объединено", "labelDy": -28 },
+    { "id": "filter-unique", "from": "filter", "to": "unique", "label": "принято", "fromSide": "right", "toSide": "left", "labelDy": -28 },
+    { "id": "filter-rejected", "from": "filter", "to": "rejected", "label": "отклонено", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom", "via": [[850, 700], [145, 700]] },
+
+    { "id": "aggregate-aggall", "from": "aggregate", "to": "aggall", "label": "history.json" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Данные", "items": ["1 класс ksiva, 444 позитива + 93 негатива", "5-fold стратифицированное разбиение", "full/ только для финального обучения (train=val)"] },
+    { "dot": "emerald", "title": "Инференс", "items": ["YOLO predict(conf=0.25, iou=0.7, imgsz=512)", "Без гейтинга по детекции человека", "Пакетный режим по манифесту, модель грузится один раз"] },
+    { "dot": "amber", "title": "Трекинг детекций", "items": ["Жёсткая связь по IoU/расстоянию на коротких разрывах", "Консервативное слияние фрагментов через 2-й проход", "Фильтры static/top-border против фоновых ложных срабатываний"] },
+    { "dot": "rose", "title": "Качество", "items": ["159 уникальных ксив против ~155 truth на размеченных видео", "Плотные видео недосчитаны, редкие дают ложные срабатывания", "runs/ksiva_yolo11_final/.../best.pt отсутствует в рабочей копии"] }
+  ]
+}

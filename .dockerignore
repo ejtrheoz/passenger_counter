@@ -1,0 +1,11 @@
+.git
+assets
+third_party
+samples
+work
+__pycache__
+**/__pycache__
+*.pyc
+.venv
+architecture
+README.md

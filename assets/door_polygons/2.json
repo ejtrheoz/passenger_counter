@@ -1,0 +1,40 @@
+{
+  "video_path": "/home/illia/work/vova/mp4_out/2.mp4",
+  "frame_size": {
+    "width": 352,
+    "height": 288
+  },
+  "points": [
+    [
+      106,
+      2
+    ],
+    [
+      271,
+      0
+    ],
+    [
+      240,
+      166
+    ],
+    [
+      113,
+      175
+    ]
+  ],
+  "point_order": [
+    "top_left",
+    "top_right",
+    "bottom_right",
+    "bottom_left"
+  ],
+  "zone": {
+    "_comment": "Counting calibration for this camera (videos 1-13): people enter from the top door and walk to the bottom-right; entrants are first seen late (progress ~90-110), close bodies fill the frame so the head point carries the door->salon travel. Calibrated on interval GT for videos 1,2,4,6,10,12,13.",
+    "outside_progress": 110,
+    "inside_progress": 128,
+    "head_outside_x": 250,
+    "head_inside_x": 320,
+    "head_outside_max_y": 40
+  },
+  "saved_at": "2026-08-17T16:27:08.133246+00:00"
+}

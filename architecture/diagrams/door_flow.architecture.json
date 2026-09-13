@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Door Flow: подсчёт вошедших людей",
+    "subtitle": "aggregate_door_flow.py + door_flow_counter.py",
+    "output": "door_flow.html",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "pipeline", "label": "Полный конвейер", "focus": ["batch", "aggregate", "activity", "clips", "counter", "segmentHistory"], "note": "От списка видео до истории enter/exit по сегменту." },
+      { "id": "counter-internals", "label": "Внутри door_flow_counter", "focus": ["counter", "bpjdet", "tracker", "rule"], "note": "Детекция, трекинг и решение enter/exit одного клипа." },
+      { "id": "evaluation", "label": "Оценка качества", "focus": ["segmentHistory", "videoHistory", "allHistory", "eval"], "note": "Сравнение результатов с интервальной ручной разметкой." }
+    ]
+  },
+  "components": [
+    { "id": "batch", "type": "backend", "label": "run_aggregate_door_flow_videos.py", "sublabel": "цикл по видео, выбор полигона", "pos": [40, 60], "size": [240, 68] },
+    { "id": "aggregate", "type": "backend", "label": "aggregate_door_flow.py", "sublabel": "оркестрация одного видео", "pos": [360, 60], "size": [220, 68] },
+    { "id": "activity", "type": "backend", "label": "Детекция активности", "sublabel": "frame diff, find_peaks", "pos": [660, 60], "size": [210, 68] },
+    { "id": "clips", "type": "external", "label": "clips/segment_*.mp4", "sublabel": "нарезанные интервалы", "pos": [950, 60], "size": [200, 68] },
+
+    { "id": "counter", "type": "backend", "label": "door_flow_counter.py", "sublabel": "воркер на клип", "pos": [950, 300], "size": [200, 68] },
+    { "id": "bpjdet", "type": "backend", "label": "BPJDet", "sublabel": "тело + голова, img 640", "pos": [660, 300], "size": [200, 68] },
+    { "id": "tracker", "type": "backend", "label": "ByteTrack / Appearance", "sublabel": "MotionTracker, TransReID", "pos": [660, 460], "size": [200, 68] },
+    { "id": "rule", "type": "backend", "label": "Zone rule + dedup", "sublabel": "DoorGeometry, evaluate_track_zone", "pos": [950, 460], "size": [200, 68] },
+
+    { "id": "segmentHistory", "type": "database", "label": "segment history.json", "sublabel": "enter/exit, предикаты, метрики", "pos": [950, 620], "size": [220, 68] },
+    { "id": "videoHistory", "type": "database", "label": "aggregate.history.json", "sublabel": "сумма по сегментам видео", "pos": [360, 620], "size": [220, 68] },
+    { "id": "allHistory", "type": "database", "label": "aggregate.all.history.json", "sublabel": "сводка по всем видео", "pos": [40, 620], "size": [240, 68] },
+    { "id": "eval", "type": "external", "label": "door_flow_gt.py eval", "sublabel": "vs notes.txt/door_flow_gt/*.txt", "pos": [950, 780], "size": [220, 68] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "door_flow_counter.py: один клип", "wraps": ["counter", "bpjdet", "tracker", "rule"] }
+  ],
+  "connections": [
+    { "id": "batch-aggregate", "from": "batch", "to": "aggregate", "label": "по одному видео" },
+    { "id": "aggregate-activity", "from": "aggregate", "to": "activity", "label": "кадры видео" },
+    { "id": "activity-clips", "from": "activity", "to": "clips", "label": "интервалы" },
+    { "id": "clips-counter", "from": "clips", "to": "counter", "label": "--jobs-file", "fromSide": "bottom", "toSide": "top", "labelDy": 24 },
+    { "id": "counter-bpjdet", "from": "counter", "to": "bpjdet", "label": "детекция", "fromSide": "left", "toSide": "right" },
+    { "id": "bpjdet-tracker", "from": "bpjdet", "to": "tracker", "label": "боксы + head", "labelDy": 24 },
+    { "id": "tracker-rule", "from": "tracker", "to": "rule", "label": "progress/lateral" },
+    { "id": "rule-segmentHistory", "from": "rule", "to": "segmentHistory", "label": "enter/exit решение", "fromSide": "bottom", "toSide": "top" },
+    { "id": "segmentHistory-videoHistory", "from": "segmentHistory", "to": "videoHistory", "label": "сумма по сегментам" },
+    { "id": "videoHistory-allHistory", "from": "videoHistory", "to": "allHistory", "label": "чтение результата", "labelDy": -28 },
+    { "id": "segmentHistory-eval", "from": "segmentHistory", "to": "eval", "label": "events по track_id", "fromSide": "bottom", "toSide": "top", "labelDy": 24 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Активность", "items": ["Frame diff с кадром 5с назад, resize 320x240", "Пики find_peaks(height=15000, distance=25 кадров)", "Слияние интервалов с зазором <= 2с, контекст +-3с"] },
+    { "dot": "emerald", "title": "Детекция и трекинг", "items": ["BPJDet: bbox тела + точка головы (не клампится)", "ByteTrack по умолчанию: Kalman-сглаженные боксы", "AppearanceTracker (legacy): TransReID + слияние дублей"] },
+    { "dot": "amber", "title": "Решение enter/exit", "items": ["Zone-правило: гистерезис outside_progress/inside_progress", "Второй путь по точке головы для layout 1", "Пороги калибруются per-камера в JSON полигона"] },
+    { "dot": "rose", "title": "Качество", "items": ["Канонический дедуп схлопывает конфликтующие alias-группы", "Итог на 35 видео: модель 495 enter vs truth 505", "door_flow_gt.py сравнивает по интервалам, не по видео целиком"] }
+  ]
+}

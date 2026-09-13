@@ -1,0 +1,37 @@
+{
+  "video_path": "/home/illia/work/vova/mp4_out/27.mp4",
+  "frame_size": {
+    "width": 352,
+    "height": 288
+  },
+  "points": [
+    [
+      77,
+      2
+    ],
+    [
+      291,
+      2
+    ],
+    [
+      287,
+      186
+    ],
+    [
+      119,
+      186
+    ]
+  ],
+  "point_order": [
+    "top_left",
+    "top_right",
+    "bottom_right",
+    "bottom_left"
+  ],
+  "zone": {
+    "_comment": "Counting calibration for this camera (videos 27-48): real entrants are seen high in the door (progress <= 95) before coming down; standing passengers hover at progress 100-110 and jump past 128 when their box grows, so the stricter outside threshold is what separates them. Head path disabled (pixel thresholds of the other layout do not apply). Calibrated on videos 30,34,37,40.",
+    "outside_progress": 95,
+    "inside_progress": 128
+  },
+  "saved_at": "2026-08-27T14:37:58.215466+00:00"
+}
