@@ -30,6 +30,7 @@ RUN pip install -r requirements.txt
 COPY door-flow ./door-flow
 COPY ksiva ./ksiva
 COPY app ./app
+COPY assets ./assets
 
 ENV ASSETS_DIR=/app/assets \
     WORK_DIR=/data/work \

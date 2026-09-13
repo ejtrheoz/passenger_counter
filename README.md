@@ -27,13 +27,14 @@ curl -X POST http://localhost:8000/count/all    -F video=@samples/first_1.mp4
 
 ## Ассеты
 
-Каталог `assets/` (монтируется в контейнер read-only, веса не в git):
+Каталог `assets/` (веса и полигоны, ~75 МБ, закоммичены в репозиторий и запекаются в
+образ через `COPY assets ./assets`):
 
 ```
 assets/
   door_polygons/2.json, 27.json
-  models/bpjdet/ch_face_s_1536_e150_best_mMR.pt
-  models/ksiva/best.pt                # runs/ksiva_yolo11_final/train/weights/best.pt
+  models/bpjdet/ch_face_s_1536_e150_best_mMR.pt   # ~25 МБ
+  models/ksiva/best.pt                            # ~50 МБ, runs/ksiva_yolo11_final/train/weights/best.pt
 ```
 
 Исходники детектора людей BPJDet (`third_party/BPJDet`, нужны, потому что `.pt` — pickle
@@ -50,19 +51,17 @@ docker build -t passenger-counter .
 
 # GPU (нужны NVIDIA-драйвер и NVIDIA Container Toolkit:
 #   sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker)
-docker run -d --name passenger-counter --gpus all -p 8000:80 \
-  -v "$PWD/assets:/app/assets:ro" passenger-counter
+docker run -d --name passenger-counter --gpus all -p 8000:80 passenger-counter
 
 # без GPU
-docker run -d --name passenger-counter -p 8000:80 -e DEVICE=cpu \
-  -v "$PWD/assets:/app/assets:ro" passenger-counter
+docker run -d --name passenger-counter -p 8000:80 -e DEVICE=cpu passenger-counter
 
 docker logs -f passenger-counter
 docker rm -f passenger-counter
 ```
 
-`assets/` монтируется как volume — веса/полигоны меняются без пересборки; пересобирать
-образ нужно только при изменении `app/`, `door-flow/`, `ksiva/`, `requirements.txt`.
+Веса и код запечены в образ — пересобирать нужно при изменении `app/`, `door-flow/`,
+`ksiva/`, `requirements.txt` или `assets/`.
 
 Переменные окружения: `DEVICE` (`0`, `0,1`, `cpu`), `BATCH_SIZE` (4), `WORK_DIR`,
 `KEEP_ARTIFACTS=1` (не удалять клипы/JSON после запроса), `JOB_TIMEOUT_SECONDS` (3600),
