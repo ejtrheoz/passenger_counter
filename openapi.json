@@ -1,0 +1,320 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Passenger Counter",
+    "description": "GPU-only detection service: analyzes one already-cut activity segment clip per request (door-flow entered/exited counting via `/analyze/people`, or ksiva-presentation counting via `/analyze/ksiva`). Splitting a source video into activity-interval segments and aggregating per-segment results across a whole video is owned by passenger_aggregator, which calls this service once per segment.",
+    "version": "0.3.0"
+  },
+  "paths": {
+    "/ping": {
+      "get": {
+        "summary": "Ping",
+        "operationId": "ping_ping_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analyze/people": {
+      "post": {
+        "summary": "Count entered/exited people in one already-cut activity segment clip",
+        "description": "Runs BPJDet + tracking on the uploaded clip only (bounded time/GPU work per call). Provide either `door_polygon` (name of a pre-registered polygon asset) or `door_polygon_json` (an inline `{\"points\": [[x, y], ...]}` polygon, e.g. one drawn by the caller on the video's first frame); `door_polygon_json` takes precedence if both are given. The caller (passenger_aggregator) is responsible for splitting the source video into activity-interval clips and summing results across clips.",
+        "operationId": "analyze_people_analyze_people_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_analyze_people_analyze_people_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analyze/ksiva": {
+      "post": {
+        "summary": "Count unique ksiva presentations in one already-cut activity segment clip",
+        "description": "Runs YOLO detection + spatial tracking/filtering on the uploaded clip only (bounded time/GPU work per call). The caller (passenger_aggregator) is responsible for splitting the source video into activity-interval clips and summing results across clips.",
+        "operationId": "analyze_ksiva_analyze_ksiva_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_analyze_ksiva_analyze_ksiva_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KsivaResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_analyze_ksiva_analyze_ksiva_post": {
+        "properties": {
+          "video": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Video"
+          }
+        },
+        "type": "object",
+        "required": [
+          "video"
+        ],
+        "title": "Body_analyze_ksiva_analyze_ksiva_post"
+      },
+      "Body_analyze_people_analyze_people_post": {
+        "properties": {
+          "video": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Video"
+          },
+          "door_polygon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Door Polygon"
+          },
+          "door_polygon_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Door Polygon Json"
+          }
+        },
+        "type": "object",
+        "required": [
+          "video"
+        ],
+        "title": "Body_analyze_people_analyze_people_post"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "KsivaResult": {
+        "properties": {
+          "unique_ksiva": {
+            "type": "integer",
+            "title": "Unique Ksiva",
+            "description": "Unique ksiva presentations counted in this clip."
+          },
+          "source_detections": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Detections"
+          },
+          "filtered_detections": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filtered Detections"
+          },
+          "rejected_tracks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected Tracks"
+          },
+          "flagged_for_review": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flagged For Review"
+          },
+          "processing_seconds": {
+            "type": "number",
+            "title": "Processing Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unique_ksiva",
+          "processing_seconds"
+        ],
+        "title": "KsivaResult"
+      },
+      "PeopleResult": {
+        "properties": {
+          "entered": {
+            "type": "integer",
+            "title": "Entered",
+            "description": "People counted entering in this clip."
+          },
+          "exited": {
+            "type": "integer",
+            "title": "Exited",
+            "description": "People counted exiting in this clip."
+          },
+          "door_polygon": {
+            "type": "string",
+            "title": "Door Polygon"
+          },
+          "processing_seconds": {
+            "type": "number",
+            "title": "Processing Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entered",
+          "exited",
+          "door_polygon",
+          "processing_seconds"
+        ],
+        "title": "PeopleResult"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

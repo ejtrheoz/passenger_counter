@@ -103,71 +103,66 @@ def _load_history(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def count_people(video_path: Path, polygon_path: Path, output_dir: Path, label: str) -> dict:
+def _single_device() -> str:
+    """settings.DEVICE may list several GPUs ("0,1") for the multi-worker aggregate scripts;
+    single-segment analysis only ever uses one worker, so pick the first device."""
+    return (settings.DEVICE.split(",")[0].strip() or "cpu")
+
+
+def analyze_people_segment(video_path: Path, polygon_path: Path, output_dir: Path, label: str) -> dict:
+    """Run door_flow_counter.py directly on one already-cut segment clip (no interval re-detection)."""
     started = time.perf_counter()
-    log(label, f"door-flow: scanning for activity (polygon={polygon_path.name}, device={settings.DEVICE})")
+    device = _single_device()
+    log(label, f"people-segment: analyzing (polygon={polygon_path.name}, device={device})")
+    history_path = output_dir / "segment.history.json"
     command = [
-        sys.executable, str(settings.DOOR_FLOW_SCRIPT),
+        sys.executable, str(settings.DOOR_FLOW_COUNTER_SCRIPT),
         "--video", str(video_path),
         "--door-polygon", str(polygon_path),
-        "--output-dir", str(output_dir),
-        "--devices", settings.DEVICE,
-        "--workers", "1",
-        "--batch-size", str(settings.BATCH_SIZE),
-        "--",
+        "--output", str(output_dir / "segment.annotated.mp4"),
+        "--history-output", str(history_path),
         "--repo-dir", str(settings.BPJDET_REPO),
         "--weights", str(settings.BPJDET_WEIGHTS),
+        "--device", device,
+        "--batch-size", str(settings.BATCH_SIZE),
     ]
-    _run(command, cwd=settings.DOOR_FLOW_DIR, label=label, stage="door-flow")
-    history = _load_history(output_dir / "aggregate.history.json")
+    _run(command, cwd=settings.DOOR_FLOW_DIR, label=label, stage="people-segment")
+    history = _load_history(history_path)
+    counts = history["counts"]
     elapsed = round(time.perf_counter() - started, 3)
-    log(label, f"door-flow: done in {elapsed}s; entered={history['counts']['enter']} exited={history['counts']['exit']}")
+    log(label, f"people-segment: done in {elapsed}s; entered={counts['enter']} exited={counts['exit']}")
     return {
-        "entered": history["counts"]["enter"],
-        "exited": history["counts"]["exit"],
+        "entered": counts["enter"],
+        "exited": counts["exit"],
         "door_polygon": polygon_path.name,
-        "fps": history.get("fps"),
-        "intervals": history.get("intervals", []),
-        "segments": [
-            {
-                "index": segment["index"],
-                "start_seconds": segment["start_seconds"],
-                "end_seconds": segment["end_seconds"],
-                "entered": segment["counts"]["enter"],
-                "exited": segment["counts"]["exit"],
-            }
-            for segment in history.get("segments", [])
-        ],
         "processing_seconds": elapsed,
     }
 
 
-def count_ksiva(video_path: Path, output_dir: Path, label: str) -> dict:
+def analyze_ksiva_segment(video_path: Path, output_dir: Path, label: str) -> dict:
+    """Run detect_ksiva_video.py + post-processing on one already-cut segment clip (no interval re-detection)."""
     started = time.perf_counter()
-    log(label, f"ksiva: scanning for activity (device={settings.DEVICE})")
+    device = _single_device()
+    log(label, f"ksiva-segment: analyzing (device={device})")
     command = [
-        sys.executable, str(settings.KSIVA_SCRIPT),
+        sys.executable, str(settings.KSIVA_SEGMENT_SCRIPT),
         "--video", str(video_path),
         "--output-dir", str(output_dir),
-        "--devices", settings.DEVICE,
-        "--workers", "1",
-        "--",
         "--weights", str(settings.KSIVA_WEIGHTS),
+        "--device", device,
         "--batch-size", str(settings.BATCH_SIZE),
     ]
-    # aggregate_ksiva.py imports activity helpers from aggregate_door_flow.py
-    _run(command, cwd=settings.KSIVA_DIR, label=label, stage="ksiva", extra_env={"PYTHONPATH": str(settings.DOOR_FLOW_DIR)})
+    _run(command, cwd=settings.KSIVA_DIR, label=label, stage="ksiva-segment")
     history = _load_history(output_dir / "aggregate.history.json")
     counts = history["counts"]
     elapsed = round(time.perf_counter() - started, 3)
-    log(label, f"ksiva: done in {elapsed}s; unique_ksiva={counts['unique_ksiva']}")
+    log(label, f"ksiva-segment: done in {elapsed}s; unique_ksiva={counts['unique_ksiva']}")
     return {
         "unique_ksiva": counts["unique_ksiva"],
         "source_detections": counts.get("source_detections"),
         "filtered_detections": counts.get("filtered_detections"),
         "rejected_tracks": counts.get("rejected_tracks"),
         "flagged_for_review": counts.get("flagged_for_review"),
-        "fps": history.get("fps"),
-        "intervals": history.get("intervals", []),
         "processing_seconds": elapsed,
     }
+

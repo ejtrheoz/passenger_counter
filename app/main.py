@@ -1,20 +1,60 @@
 import asyncio
+import json
 import shutil
 import subprocess
 import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 
 from . import pipelines, settings
 
-app = FastAPI(title="Passenger Counter", version="0.1.0")
+app = FastAPI(
+    title="Passenger Counter",
+    version="0.3.0",
+    description=(
+        "GPU-only detection service: analyzes one already-cut activity segment clip per request "
+        "(door-flow entered/exited counting via `/analyze/people`, or ksiva-presentation counting via "
+        "`/analyze/ksiva`). Splitting a source video into activity-interval segments and aggregating "
+        "per-segment results across a whole video is owned by passenger_aggregator, which calls this "
+        "service once per segment."
+    ),
+)
 
-# The pipelines spawn GPU subprocesses; only one video is processed at a time.
+# The pipelines spawn GPU subprocesses; only one clip is processed at a time.
 _job_lock = asyncio.Lock()
 
 
-def _resolve_polygon(name: str | None) -> Path:
+class PeopleResult(BaseModel):
+    entered: int = Field(..., description="People counted entering in this clip.")
+    exited: int = Field(..., description="People counted exiting in this clip.")
+    door_polygon: str
+    processing_seconds: float
+
+
+class KsivaResult(BaseModel):
+    unique_ksiva: int = Field(..., description="Unique ksiva presentations counted in this clip.")
+    source_detections: int | None = None
+    filtered_detections: int | None = None
+    rejected_tracks: int | None = None
+    flagged_for_review: int | None = None
+    processing_seconds: float
+
+
+def _resolve_polygon(name: str | None, inline_json: str | None, job_dir: Path) -> Path:
+    """Either a pre-registered polygon asset (by name) or an inline JSON polygon supplied by the caller."""
+    if inline_json is not None:
+        try:
+            payload = json.loads(inline_json)
+        except json.JSONDecodeError as error:
+            raise HTTPException(status_code=400, detail=f"door_polygon_json is not valid JSON: {error}") from error
+        points = payload.get("points") if isinstance(payload, dict) else None
+        if not isinstance(points, list) or len(points) < 3:
+            raise HTTPException(status_code=400, detail="door_polygon_json must be an object with a 'points' list of at least 3 [x, y] pairs")
+        path = job_dir / "door_polygon.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
     name = name or settings.DEFAULT_DOOR_POLYGON
     if Path(name).name != name or not name.endswith(".json"):
         raise HTTPException(status_code=400, detail="door_polygon must be a plain file name ending in .json")
@@ -51,10 +91,10 @@ async def _process(video: UploadFile, run):
     try:
         video_path = await _save_upload(video, job_dir)
         if _job_lock.locked():
-            pipelines.log(label, "waiting for the previous video to finish")
+            pipelines.log(label, "waiting for the previous clip to finish")
         async with _job_lock:
             result = await asyncio.to_thread(run, video_path, job_dir, label)
-        return {"video": video.filename, **result}
+        return result
     except pipelines.PipelineError as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
     finally:
@@ -70,8 +110,8 @@ def ping():
 @app.get("/health")
 def health():
     checks = {
-        "door_flow_script": settings.DOOR_FLOW_SCRIPT.is_file(),
-        "ksiva_script": settings.KSIVA_SCRIPT.is_file(),
+        "door_flow_counter_script": settings.DOOR_FLOW_COUNTER_SCRIPT.is_file(),
+        "ksiva_segment_script": settings.KSIVA_SEGMENT_SCRIPT.is_file(),
         "bpjdet_repo": (settings.BPJDET_REPO / "models" / "experimental.py").is_file(),
         "bpjdet_weights": settings.BPJDET_WEIGHTS.is_file(),
         "ksiva_weights": settings.KSIVA_WEIGHTS.is_file(),
@@ -92,25 +132,37 @@ def health():
     }
 
 
-@app.post("/count/people")
-async def count_people(video: UploadFile = File(...), door_polygon: str | None = Form(None)):
-    polygon = _resolve_polygon(door_polygon)
-    return await _process(video, lambda path, job_dir, label: pipelines.count_people(path, polygon, job_dir / "door_flow", label))
-
-
-@app.post("/count/ksiva")
-async def count_ksiva(video: UploadFile = File(...)):
-    return await _process(video, lambda path, job_dir, label: pipelines.count_ksiva(path, job_dir / "ksiva", label))
-
-
-@app.post("/count/all")
-async def count_all(video: UploadFile = File(...), door_polygon: str | None = Form(None)):
-    polygon = _resolve_polygon(door_polygon)
-
+@app.post(
+    "/analyze/people",
+    response_model=PeopleResult,
+    summary="Count entered/exited people in one already-cut activity segment clip",
+    description="Runs BPJDet + tracking on the uploaded clip only (bounded time/GPU work per call). Provide "
+    "either `door_polygon` (name of a pre-registered polygon asset) or `door_polygon_json` (an inline "
+    "`{\"points\": [[x, y], ...]}` polygon, e.g. one drawn by the caller on the video's first frame); "
+    "`door_polygon_json` takes precedence if both are given. The caller (passenger_aggregator) is responsible "
+    "for splitting the source video into activity-interval clips and summing results across clips.",
+)
+async def analyze_people(
+    video: UploadFile = File(...),
+    door_polygon: str | None = Form(None),
+    door_polygon_json: str | None = Form(None),
+):
     def run(path, job_dir, label):
-        return {
-            "people": pipelines.count_people(path, polygon, job_dir / "door_flow", label),
-            "ksiva": pipelines.count_ksiva(path, job_dir / "ksiva", label),
-        }
+        polygon_path = _resolve_polygon(door_polygon, door_polygon_json, job_dir)
+        return pipelines.analyze_people_segment(path, polygon_path, job_dir / "result", label)
 
-    return await _process(video, run)
+    result = await _process(video, run)
+    return PeopleResult(**result)
+
+
+@app.post(
+    "/analyze/ksiva",
+    response_model=KsivaResult,
+    summary="Count unique ksiva presentations in one already-cut activity segment clip",
+    description="Runs YOLO detection + spatial tracking/filtering on the uploaded clip only (bounded time/GPU "
+    "work per call). The caller (passenger_aggregator) is responsible for splitting the source video into "
+    "activity-interval clips and summing results across clips.",
+)
+async def analyze_ksiva(video: UploadFile = File(...)):
+    result = await _process(video, lambda path, job_dir, label: pipelines.analyze_ksiva_segment(path, job_dir / "result", label))
+    return KsivaResult(**result)
